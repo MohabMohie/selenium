@@ -33,7 +33,9 @@ public class Debug {
 
   static {
     IS_DEBUG =
-        Boolean.getBoolean("selenium.debug") || Boolean.getBoolean("selenium.webdriver.verbose");
+        Boolean.getBoolean("selenium.debug")
+            || Boolean.getBoolean("webdriver.verbose")
+            || Boolean.getBoolean("selenium.webdriver.verbose");
   }
 
   private Debug() {
@@ -60,7 +62,7 @@ public class Debug {
   }
 
   public static void configureLogger() {
-    if (!isDebugAll() || loggerConfigured) {
+    if (!(isDebugAll() || isDebugging()) || loggerConfigured) {
       return;
     }
 
