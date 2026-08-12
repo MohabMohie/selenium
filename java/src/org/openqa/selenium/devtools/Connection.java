@@ -51,6 +51,7 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.devtools.idealized.target.model.SessionID;
+import org.openqa.selenium.internal.Debug;
 import org.openqa.selenium.internal.Either;
 import org.openqa.selenium.internal.Require;
 import org.openqa.selenium.json.Json;
@@ -94,6 +95,7 @@ public class Connection implements Closeable {
   public Connection(HttpClient client, String url, ClientConfig clientConfig) {
     this.client = Require.nonNull("HTTP client", client);
     this.wsConfig = wsClientConfig(clientConfig, url);
+    Debug.configureLogger();
     this.socket = this.client.openSocket(new HttpRequest(GET, wsConfig.baseUri()), new Listener());
     this.isClosed = new AtomicBoolean();
   }
