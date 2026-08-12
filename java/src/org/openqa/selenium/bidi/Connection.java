@@ -46,6 +46,7 @@ import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 import org.openqa.selenium.Beta;
 import org.openqa.selenium.WebDriverException;
+import org.openqa.selenium.internal.Debug;
 import org.openqa.selenium.internal.Either;
 import org.openqa.selenium.internal.Require;
 import org.openqa.selenium.json.Json;
@@ -79,6 +80,7 @@ public class Connection implements Closeable {
   public Connection(HttpClient client, String url) {
     Require.nonNull("HTTP client", client);
     Require.nonNull("URL to connect to", url);
+    Debug.configureLogger();
 
     this.client = client;
     this.socket = this.client.openSocket(new HttpRequest(GET, url), new Listener());
