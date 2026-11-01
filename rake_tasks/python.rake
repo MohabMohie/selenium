@@ -6,6 +6,24 @@ def python_version
   SeleniumRake.version('python')
 end
 
+def uv_pip_install(*args)
+  # uv --system ignores an active venv, so only fall back to it when there is none
+  args << '--system' unless ENV['VIRTUAL_ENV'] || ENV['CONDA_PREFIX'] || Dir.exist?('.venv')
+  Bazel.execute('run', ['--', 'pip', 'install', *args], '@multitool//tools/uv:cwd')
+end
+
+unless defined?(MANAGER_PYTHON_WHEEL_TARGETS)
+  # Each package fans out to one wheel per platform tag it supports, so build the
+  # `wheels` filegroup rather than naming individual wheels here.
+  MANAGER_PYTHON_WHEEL_TARGETS = %w[
+    //py/selenium-manager-linux-x86-64:wheels
+    //py/selenium-manager-linux-aarch64:wheels
+    //py/selenium-manager-macos:wheels
+    //py/selenium-manager-windows-x86:wheels
+    //py/selenium-manager:wheels
+  ].freeze
+end
+
 desc 'Build Python wheel and sdist with optional arguments'
 task :build do |_task, arguments|
   args = arguments.to_a
@@ -50,8 +68,9 @@ task :verify do
   SeleniumRake.verify_package_published("https://pypi.org/pypi/selenium/#{python_version}/json")
 end
 
-desc 'Copy known generated files for local development (use `./go py:local_dev all` to copy everything)'
+desc 'Install dependencies and copy generated files for local development (`./go py:local_dev all` copies everything)'
 task :local_dev, [:all] do |_task, arguments|
+  uv_pip_install('-r', 'py/requirements_lock.txt')
   Bazel.execute('build', [], %w[//py:selenium-wheel //py:version-py-release])
   FileUtils.rm_f('py/selenium/_version.py')
   FileUtils.cp(File.realpath('bazel-bin/py/release/selenium/_version.py'), 'py/selenium/_version.py')
@@ -127,7 +146,10 @@ end
 desc 'Install Python wheel locally'
 task :install do
   Bazel.execute('build', [], '//py:selenium-wheel')
-  sh 'pip install bazel-bin/py/selenium-*.whl'
+  wheels = Dir.glob('bazel-bin/py/selenium-*.whl')
+  raise 'No Python wheel found in bazel-bin/py' if wheels.empty?
+
+  uv_pip_install(*wheels)
 end
 
 desc 'Pin Python dependencies'
@@ -152,6 +174,37 @@ task :version, [:version] do |_task, arguments|
   new_version = SeleniumRake.updated_version(old_version, arguments[:version], '.dev0')
   puts "Updating Python from #{old_version} to #{new_version}"
   SeleniumRake.write_version('python', new_version)
+end
+
+desc 'Release selenium-manager Python packages to PyPI (use dry-run to build without uploading)'
+task :release_manager do |_task, arguments|
+  args = arguments.to_a
+  nightly = args.include?('nightly')
+  dry_run = args.include?('dry-run')
+  config = args.include?('rbe') ? 'rbe_release' : 'release'
+  Rake::Task['py:check_credentials'].invoke(*args) unless dry_run
+
+  if nightly
+    # The manager wheels take the binding's version. Reuse a nightly version that
+    # py:release already stamped, so the manager matches the selenium wheel beside it.
+    unless python_version.match?(/dev\d{12}$/)
+      Rake::Task['py:version'].invoke('nightly')
+      SeleniumRake.write_version('python', python_version.sub(/dev0$/, "dev#{Time.now.strftime('%Y%m%d%H%M')}"))
+    end
+    ENV['TWINE_PASSWORD'] = ENV.fetch('TWINE_NIGHTLY_PASSWORD', nil)
+  end
+
+  if dry_run
+    MANAGER_PYTHON_WHEEL_TARGETS.each do |target|
+      puts "Dry-run: #{target}"
+      Bazel.execute('build', ["--config=#{config}"], target)
+    end
+    next
+  end
+
+  command = nightly ? '//py:selenium-manager-release-nightly' : '//py:selenium-manager-release'
+  puts "Running selenium-manager Python release command: #{command}"
+  Bazel.execute('run', ["--config=#{config}"], command)
 end
 
 desc 'Format Python code with ruff'
